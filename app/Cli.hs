@@ -28,6 +28,7 @@ data ExtensionsArgs = ExtensionsArgs
     , extensionsArgsCabalToggle    :: !Toggle
       -- | When 'Disabled', print only @.cabal@ file's @default-extensions@
     , extensionsArgsModulesToggle  :: !Toggle
+    , extensionsArgsUnionToggle    :: !Toggle
     }
 
 data Toggle
@@ -49,6 +50,7 @@ extensionsP = do
     extensionsArgsModuleFilePath <- filePathP "module" "Haskell module"
     extensionsArgsCabalToggle    <- noCabalP
     extensionsArgsModulesToggle  <- noModulesP
+    extensionsArgsUnionToggle    <- unionP
     pure ExtensionsArgs{..}
 
 filePathP :: String -> String -> Parser (Maybe FilePath)
@@ -68,4 +70,10 @@ noModulesP :: Parser Toggle
 noModulesP = flag Enabled Disabled $ mconcat
     [ long "no-modules"
     , help "Print only .cabal file's 'default-extensions'"
+    ]
+
+unionP :: Parser Toggle
+unionP = flag Disabled Enabled $ mconcat
+    [ long "union"
+    , help "Print the union of all encountered extensions"
     ]

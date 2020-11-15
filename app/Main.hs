@@ -9,14 +9,16 @@ import GHC.Exts (sortWith)
 import System.Directory (doesFileExist, getCurrentDirectory, listDirectory)
 import System.Exit (exitFailure)
 import System.FilePath (takeExtension, (</>))
+import System.IO (stderr)
 
 import Cli (ExtensionsArgs (..), Toggle (..), runExtensionsCli)
 import Extensions (ExtensionsResult, getModuleExtentions, getPackageExtentions)
 import Extensions.Cabal (parseCabalFileExtensions)
 import Extensions.Module (parseFile)
 import Extensions.Types (CabalException, Extensions (..), OnOffExtension (..),
-                         ParsedExtensions (..), SafeHaskellExtension, showOnOffExtension)
+                         ParsedExtensions (..), SafeHaskellExtension, showOnOffExtension, mergeExtensions)
 
+import qualified Data.Set as Set
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TextIO
@@ -29,13 +31,14 @@ main = do
         extensionsArgsModuleFilePath
         extensionsArgsCabalToggle
         extensionsArgsModulesToggle
+        extensionsArgsUnionToggle
 
 
-run :: Maybe FilePath -> Maybe FilePath -> Toggle -> Toggle -> IO ()
-run mCabalPath mModulePath cabal modules = case (mCabalPath, mModulePath, cabal, modules) of
+run :: Maybe FilePath -> Maybe FilePath -> Toggle -> Toggle -> Toggle -> IO ()
+run mCabalPath mModulePath cabal modules union = case (mCabalPath, mModulePath, cabal, modules) of
     -- no options specified
     (Nothing, Nothing, Enabled, Enabled) ->
-        findCabalFile >>= printAllModulesExtensions
+        findCabalFile >>= printAllModulesExtensions union
 
     -- --no-modules
     (Nothing, Nothing, Enabled, Disabled) ->
@@ -48,7 +51,7 @@ run mCabalPath mModulePath cabal modules = case (mCabalPath, mModulePath, cabal,
 
     -- --cabal-file-path
     (Just cabalPath, Nothing, Enabled, Enabled) ->
-        withPath cabalPath (printAllModulesExtensions cabalPath)
+        withPath cabalPath (printAllModulesExtensions union cabalPath)
 
     -- --cabal-file-path --no-modules
     (Just cabalPath, Nothing, Enabled, Disabled) ->
@@ -117,8 +120,13 @@ findCabalFile = do
                 <> Text.intercalate ", " (map Text.pack l)
             usageHint
 
-printAllModulesExtensions :: FilePath -> IO ()
-printAllModulesExtensions cabalPath = do
+printAllModulesExtensions :: Toggle -> FilePath -> IO ()
+printAllModulesExtensions Enabled cabalPath = do
+    cabalExts <- handleCabalException $ getPackageExtentions cabalPath
+    case mergeExtensions . concatMap (Set.toList . extensionsAll) <$> sequence (Map.elems cabalExts) of
+        Left err   -> exitAfter $ TextIO.hPutStrLn stderr $ tshow err
+        Right exts -> mapM_ (TextIO.putStrLn . showOnOffExtension) exts
+printAllModulesExtensions Disabled cabalPath = do
     cabalExts <- handleCabalException $ getPackageExtentions cabalPath
     infoMessage "Extensions for each module combined with 'default-extensions'"
 
